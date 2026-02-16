@@ -1,6 +1,6 @@
 package agent
 
-import "fmt"
+import "github.com/tinywasm/fmt"
 
 type State uint8
 
@@ -49,5 +49,5 @@ func (f *fsm) transition(to State) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("invalid FSM transition: %s -> %s", f.current, to)
+	return fmt.Errf("invalid FSM transition: %s -> %s", f.current, to)
 }

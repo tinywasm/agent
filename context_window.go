@@ -2,9 +2,9 @@ package agent
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"time"
+
+	"github.com/tinywasm/fmt"
 )
 
 // prepareContext builds the context window for the next LLM turn.
@@ -13,13 +13,13 @@ func (a *Agent) prepareContext(ctx context.Context, sessionID string) (*LLMReque
 	// 1. Load recent episodes
 	episodes, err := a.mem.GetEpisodes(ctx, sessionID, a.cfg.ContextWindow.MaxEpisodes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load episodes: %w", err)
+		return nil, fmt.Errf("failed to load episodes: %w", err)
 	}
 
 	// 2. Load recent messages
 	messages, err := a.mem.GetMessages(ctx, sessionID, a.cfg.ContextWindow.MaxRecentMsgs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load messages: %w", err)
+		return nil, fmt.Errf("failed to load messages: %w", err)
 	}
 
 	// 3. Calculate current token usage
@@ -64,14 +64,14 @@ func (a *Agent) prepareContext(ctx context.Context, sessionID string) (*LLMReque
 		if err != nil {
 			// Log error but continue without summarization? Or fail?
 			// Let's fail for now to be safe.
-			return nil, fmt.Errorf("summarization failed: %w", err)
+			return nil, fmt.Errf("summarization failed: %w", err)
 		}
 
 		// Save Episode
 		fromID := toSummarize[0].ID
 		toID := toSummarize[len(toSummarize)-1].ID
 		if err := a.mem.SaveEpisode(ctx, sessionID, summary, tokenCount, fromID, toID); err != nil {
-			return nil, fmt.Errorf("failed to save episode: %w", err)
+			return nil, fmt.Errf("failed to save episode: %w", err)
 		}
 
 		// Add new episode to the list for this turn context
@@ -89,7 +89,7 @@ func (a *Agent) prepareContext(ctx context.Context, sessionID string) (*LLMReque
 			ids = append(ids, m.ID)
 		}
 		if err := a.mem.DeleteMessages(ctx, sessionID, ids); err != nil {
-			return nil, fmt.Errorf("failed to delete summarized messages: %w", err)
+			return nil, fmt.Errf("failed to delete summarized messages: %w", err)
 		}
 
 		// Use remaining messages for this turn
@@ -113,21 +113,21 @@ func (a *Agent) prepareContext(ctx context.Context, sessionID string) (*LLMReque
 
 	// Helper to format episodes
 	if len(episodes) > 0 {
-		var sb strings.Builder
-		sb.WriteString("Previous conversation summary:\n")
+		sb := fmt.Convert("")
+		sb.WrString(fmt.BuffOut, "Previous conversation summary:\n")
 		// Episodes are returned in descending order (newest first) by GetEpisodes,
 		// but for context we want chronological?
 		// "GetEpisodes ... ORDER BY created_at DESC"
 		// So we should iterate backwards or reverse them.
 		for i := len(episodes) - 1; i >= 0; i-- {
-			sb.WriteString(fmt.Sprintf("- %s\n", episodes[i].Summary))
+			sb.WrString(fmt.BuffOut, fmt.Sprintf("- %s\n", episodes[i].Summary))
 		}
 
 		// Add as a system message or prepend to first message?
 		// We'll add as a system message.
 		finalMessages = append(finalMessages, Message{
 			Role: "system",
-			Content: sb.String(),
+			Content: sb.GetString(fmt.BuffOut),
 			CreatedAt: time.Now().Unix(), // This is ephemeral
 		})
 	}
@@ -150,19 +150,19 @@ func (a *Agent) summarizeMessages(ctx context.Context, msgs []Message) (string, 
 		summarizer = a.cfg.LLMs.Primary
 	}
 
-	var sb strings.Builder
-	sb.WriteString("Summarize the following conversation segment concisely:\n\n")
+	sb := fmt.Convert("")
+	sb.WrString(fmt.BuffOut, "Summarize the following conversation segment concisely:\n\n")
 	for _, m := range msgs {
-		sb.WriteString(fmt.Sprintf("%s: %s\n", m.Role, m.Content))
+		sb.WrString(fmt.BuffOut, fmt.Sprintf("%s: %s\n", m.Role, m.Content))
 		for _, tc := range m.ToolCalls {
-			sb.WriteString(fmt.Sprintf("Tool Call %s: %s(%s)\n", tc.ID, tc.Name, tc.Input))
+			sb.WrString(fmt.BuffOut, fmt.Sprintf("Tool Call %s: %s(%s)\n", tc.ID, tc.Name, tc.Input))
 		}
 	}
 
 	req := LLMRequest{
 		SystemPrompt: "You are a helpful assistant that summarizes conversations.",
 		Messages: []Message{
-			{Role: "user", Content: sb.String()},
+			{Role: "user", Content: sb.GetString(fmt.BuffOut)},
 		},
 		MaxTokens: 500, // Reasonable limit for summary
 	}
@@ -177,14 +177,14 @@ func (a *Agent) summarizeMessages(ctx context.Context, msgs []Message) (string, 
 }
 
 func (a *Agent) buildSystemPrompt() string {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("You are %s. %s\n", a.cfg.Identity.Name, a.cfg.Identity.Role))
-	sb.WriteString(a.cfg.Identity.Instructions + "\n")
+	sb := fmt.Convert("")
+	sb.WrString(fmt.BuffOut, fmt.Sprintf("You are %s. %s\n", a.cfg.Identity.Name, a.cfg.Identity.Role))
+	sb.WrString(fmt.BuffOut, a.cfg.Identity.Instructions + "\n")
 	if len(a.cfg.Identity.Goals) > 0 {
-		sb.WriteString("Goals:\n")
+		sb.WrString(fmt.BuffOut, "Goals:\n")
 		for _, g := range a.cfg.Identity.Goals {
-			sb.WriteString(fmt.Sprintf("- %s\n", g))
+			sb.WrString(fmt.BuffOut, fmt.Sprintf("- %s\n", g))
 		}
 	}
-	return sb.String()
+	return sb.GetString(fmt.BuffOut)
 }

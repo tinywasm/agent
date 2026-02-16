@@ -2,17 +2,18 @@ package agent
 
 import (
 	"context"
-	"fmt"
 	"time"
+
+	"github.com/tinywasm/fmt"
 )
 
 // New creates a new Agent instance.
 func New(cfg Config) (*Agent, error) {
 	if cfg.LLMs.Primary == nil {
-		return nil, fmt.Errorf("agent: LLMs.Primary is required")
+		return nil, fmt.Errf("agent: LLMs.Primary is required")
 	}
 	if cfg.Memory == nil {
-		return nil, fmt.Errorf("agent: Memory is required")
+		return nil, fmt.Errf("agent: Memory is required")
 	}
 
 	// Apply defaults
@@ -55,7 +56,7 @@ func New(cfg Config) (*Agent, error) {
 
 	for _, handler := range cfg.MCPHandlers {
 		if err := registry.addMCPServer(ctx, handler); err != nil {
-			return nil, fmt.Errorf("agent: failed to add MCP handler %s: %w", handler.URL(), err)
+			return nil, fmt.Errf("agent: failed to add MCP handler %s: %w", handler.URL(), err)
 		}
 	}
 
@@ -63,7 +64,7 @@ func New(cfg Config) (*Agent, error) {
 	for _, url := range cfg.MCPServers {
 		client := NewHTTPMCPClient(url)
 		if err := registry.addMCPClient(ctx, client); err != nil {
-			return nil, fmt.Errorf("agent: failed to connect to MCP server %s: %w", url, err)
+			return nil, fmt.Errf("agent: failed to connect to MCP server %s: %w", url, err)
 		}
 	}
 

@@ -2,18 +2,17 @@ package agent
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tinywasm/fmt"
 )
 
 // Run executes the full ReAct + Reflection loop for a single user query.
 func (a *Agent) Run(ctx context.Context, sessionID, userQuery string) (string, error) {
 	// 2. Initialize: Ensure session exists
 	if err := a.mem.EnsureSession(ctx, sessionID); err != nil {
-		return "", fmt.Errorf("failed to ensure session: %w", err)
+		return "", fmt.Errf("failed to ensure session: %w", err)
 	}
 
 	// Append user message
@@ -26,7 +25,7 @@ func (a *Agent) Run(ctx context.Context, sessionID, userQuery string) (string, e
 		TokenCount: len(userQuery) / 4, // Rough estimate
 	}
 	if err := a.mem.AppendMessage(ctx, sessionID, userMsg); err != nil {
-		return "", fmt.Errorf("failed to append user message: %w", err)
+		return "", fmt.Errf("failed to append user message: %w", err)
 	}
 
 	// 3. Loop
@@ -52,7 +51,7 @@ func (a *Agent) Run(ctx context.Context, sessionID, userQuery string) (string, e
 		// Build Context Window
 		req, err := a.prepareContext(ctx, sessionID)
 		if err != nil {
-			return "", fmt.Errorf("failed to prepare context: %w", err)
+			return "", fmt.Errf("failed to prepare context: %w", err)
 		}
 
 		// Add tools to request
@@ -71,7 +70,7 @@ func (a *Agent) Run(ctx context.Context, sessionID, userQuery string) (string, e
 
 		resp, err := a.llms.Primary.Generate(ctx, *req)
 		if err != nil {
-			return "", fmt.Errorf("LLM generation failed: %w", err)
+			return "", fmt.Errf("LLM generation failed: %w", err)
 		}
 
 		// Acting
@@ -105,7 +104,7 @@ func (a *Agent) Run(ctx context.Context, sessionID, userQuery string) (string, e
 			// And we append tool results as `role="tool"`.
 
 			if err := a.mem.AppendMessage(ctx, sessionID, assistantMsg); err != nil {
-				return "", fmt.Errorf("failed to save assistant message: %w", err)
+				return "", fmt.Errf("failed to save assistant message: %w", err)
 			}
 
 			// Execute tools
@@ -146,7 +145,7 @@ func (a *Agent) Run(ctx context.Context, sessionID, userQuery string) (string, e
 				}
 
 				if err := a.mem.AppendMessage(ctx, sessionID, toolMsg); err != nil {
-					return "", fmt.Errorf("failed to save tool message: %w", err)
+					return "", fmt.Errf("failed to save tool message: %w", err)
 				}
 
 				if actingFailures >= a.cfg.MaxRetries {
@@ -181,7 +180,7 @@ func (a *Agent) Run(ctx context.Context, sessionID, userQuery string) (string, e
 				CreatedAt:  time.Now().Unix(),
 			}
 			if err := a.mem.AppendMessage(ctx, sessionID, candidateMsg); err != nil {
-				return "", fmt.Errorf("failed to save candidate message: %w", err)
+				return "", fmt.Errf("failed to save candidate message: %w", err)
 			}
 
 			// Select reflector
@@ -217,7 +216,7 @@ If NO, respond with "INSUFFICIENT" followed by a short critique.
 			} else {
 				// Check if sufficient
 				// Note: Ideally we should use strict parsing or boolean output
-				isSufficient := reflectResp.Text == "SUFFICIENT" || reflectResp.Text == "SUFFICIENT." || strings.Contains(reflectResp.Text, "SUFFICIENT") && !strings.Contains(reflectResp.Text, "INSUFFICIENT")
+				isSufficient := reflectResp.Text == "SUFFICIENT" || reflectResp.Text == "SUFFICIENT." || fmt.Contains(reflectResp.Text, "SUFFICIENT") && !fmt.Contains(reflectResp.Text, "INSUFFICIENT")
 
 				if isSufficient {
 					// Finalize
@@ -245,7 +244,7 @@ If NO, respond with "INSUFFICIENT" followed by a short critique.
 						TokenCount: len(critique) / 4,
 					}
 					if err := a.mem.AppendMessage(ctx, sessionID, feedbackMsg); err != nil {
-						return "", fmt.Errorf("failed to save feedback: %w", err)
+						return "", fmt.Errf("failed to save feedback: %w", err)
 					}
 
 					// Back to loop (Reasoning)
@@ -264,5 +263,5 @@ If NO, respond with "INSUFFICIENT" followed by a short critique.
 		}
 	}
 
-	return "", fmt.Errorf("max iterations reached")
+	return "", fmt.Errf("max iterations reached")
 }

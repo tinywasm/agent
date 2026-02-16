@@ -4,10 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
-	"strings"
 
 	"github.com/google/uuid"
+	"github.com/tinywasm/fmt"
 	_ "modernc.org/sqlite"
 )
 
@@ -20,12 +19,12 @@ type SQLiteMemoryStore struct {
 func NewSQLiteMemory(dsn string) (MemoryStore, error) {
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
+		return nil, fmt.Errf("failed to open sqlite db: %w", err)
 	}
 
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("failed to apply schema: %w", err)
+		return nil, fmt.Errf("failed to apply schema: %w", err)
 	}
 
 	return &SQLiteMemoryStore{db: db}, nil
@@ -34,7 +33,7 @@ func NewSQLiteMemory(dsn string) (MemoryStore, error) {
 func (s *SQLiteMemoryStore) EnsureSession(ctx context.Context, sessionID string) error {
 	_, err := s.db.ExecContext(ctx, "INSERT OR IGNORE INTO sessions (id) VALUES (?)", sessionID)
 	if err != nil {
-		return fmt.Errorf("failed to ensure session: %w", err)
+		return fmt.Errf("failed to ensure session: %w", err)
 	}
 	return nil
 }
@@ -50,7 +49,7 @@ func (s *SQLiteMemoryStore) AppendMessage(ctx context.Context, sessionID string,
 	if len(msg.ToolCalls) > 0 {
 		b, err := json.Marshal(msg.ToolCalls)
 		if err != nil {
-			return fmt.Errorf("failed to marshal tool calls: %w", err)
+			return fmt.Errf("failed to marshal tool calls: %w", err)
 		}
 		toolCallsJSON = string(b)
 	}
@@ -60,7 +59,7 @@ func (s *SQLiteMemoryStore) AppendMessage(ctx context.Context, sessionID string,
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, msg.ID, sessionID, msg.Role, msg.Content, msg.ToolName, msg.ToolCallID, toolCallsJSON, msg.TokenCount, msg.CreatedAt)
 	if err != nil {
-		return fmt.Errorf("failed to append message: %w", err)
+		return fmt.Errf("failed to append message: %w", err)
 	}
 	return nil
 }
@@ -74,7 +73,7 @@ func (s *SQLiteMemoryStore) GetMessages(ctx context.Context, sessionID string, l
 		LIMIT ?
 	`, sessionID, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get messages: %w", err)
+		return nil, fmt.Errf("failed to get messages: %w", err)
 	}
 	defer rows.Close()
 
@@ -83,7 +82,7 @@ func (s *SQLiteMemoryStore) GetMessages(ctx context.Context, sessionID string, l
 		var m Message
 		var toolName, toolCallID, toolCallsJSON sql.NullString
 		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &toolName, &toolCallID, &toolCallsJSON, &m.TokenCount, &m.CreatedAt); err != nil {
-			return nil, fmt.Errorf("failed to scan message: %w", err)
+			return nil, fmt.Errf("failed to scan message: %w", err)
 		}
 		if toolName.Valid {
 			m.ToolName = toolName.String
@@ -93,13 +92,13 @@ func (s *SQLiteMemoryStore) GetMessages(ctx context.Context, sessionID string, l
 		}
 		if toolCallsJSON.Valid && toolCallsJSON.String != "" {
 			if err := json.Unmarshal([]byte(toolCallsJSON.String), &m.ToolCalls); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal tool calls: %w", err)
+				return nil, fmt.Errf("failed to unmarshal tool calls: %w", err)
 			}
 		}
 		msgs = append(msgs, m)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows error: %w", err)
+		return nil, fmt.Errf("rows error: %w", err)
 	}
 	return msgs, nil
 }
@@ -108,7 +107,7 @@ func (s *SQLiteMemoryStore) DeleteMessages(ctx context.Context, sessionID string
 	if len(ids) == 0 {
 		return nil
 	}
-	query := "DELETE FROM messages WHERE session_id = ? AND id IN (?" + strings.Repeat(",?", len(ids)-1) + ")"
+	query := "DELETE FROM messages WHERE session_id = ? AND id IN (?" + fmt.Convert(",?").Repeat(len(ids)-1).String() + ")"
 	args := make([]any, len(ids)+1)
 	args[0] = sessionID
 	for i, id := range ids {
@@ -116,7 +115,7 @@ func (s *SQLiteMemoryStore) DeleteMessages(ctx context.Context, sessionID string
 	}
 	_, err := s.db.ExecContext(ctx, query, args...)
 	if err != nil {
-		return fmt.Errorf("failed to delete messages: %w", err)
+		return fmt.Errf("failed to delete messages: %w", err)
 	}
 	return nil
 }
@@ -128,7 +127,7 @@ func (s *SQLiteMemoryStore) SaveEpisode(ctx context.Context, sessionID, summary 
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, id, sessionID, summary, tokenCount, fromID, toID)
 	if err != nil {
-		return fmt.Errorf("failed to save episode: %w", err)
+		return fmt.Errf("failed to save episode: %w", err)
 	}
 	return nil
 }
@@ -142,7 +141,7 @@ func (s *SQLiteMemoryStore) GetEpisodes(ctx context.Context, sessionID string, l
 		LIMIT ?
 	`, sessionID, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get episodes: %w", err)
+		return nil, fmt.Errf("failed to get episodes: %w", err)
 	}
 	defer rows.Close()
 
@@ -150,12 +149,12 @@ func (s *SQLiteMemoryStore) GetEpisodes(ctx context.Context, sessionID string, l
 	for rows.Next() {
 		var e Episode
 		if err := rows.Scan(&e.ID, &e.SessionID, &e.Summary, &e.TokenCount, &e.FromMsgID, &e.ToMsgID, &e.CreatedAt); err != nil {
-			return nil, fmt.Errorf("failed to scan episode: %w", err)
+			return nil, fmt.Errf("failed to scan episode: %w", err)
 		}
 		eps = append(eps, e)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows error: %w", err)
+		return nil, fmt.Errf("rows error: %w", err)
 	}
 	return eps, nil
 }
@@ -174,7 +173,7 @@ func (s *SQLiteMemoryStore) SaveKnowledge(ctx context.Context, sessionID, conten
 		VALUES (?, ?, ?, ?)
 	`, id, sessionIDParam, content, source)
 	if err != nil {
-		return fmt.Errorf("failed to save knowledge: %w", err)
+		return fmt.Errf("failed to save knowledge: %w", err)
 	}
 	return nil
 }
@@ -205,7 +204,7 @@ func (s *SQLiteMemoryStore) SearchKnowledge(ctx context.Context, query, sessionI
 		LIMIT ?
 	`, sessionID, query, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to search knowledge: %w", err)
+		return nil, fmt.Errf("failed to search knowledge: %w", err)
 	}
 	defer rows.Close()
 
@@ -214,7 +213,7 @@ func (s *SQLiteMemoryStore) SearchKnowledge(ctx context.Context, query, sessionI
 		var k Knowledge
 		var sid sql.NullString
 		if err := rows.Scan(&k.ID, &sid, &k.Content, &k.Source, &k.CreatedAt); err != nil {
-			return nil, fmt.Errorf("failed to scan knowledge: %w", err)
+			return nil, fmt.Errf("failed to scan knowledge: %w", err)
 		}
 		if sid.Valid {
 			k.SessionID = sid.String
@@ -222,7 +221,7 @@ func (s *SQLiteMemoryStore) SearchKnowledge(ctx context.Context, query, sessionI
 		kns = append(kns, k)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows error: %w", err)
+		return nil, fmt.Errf("rows error: %w", err)
 	}
 	return kns, nil
 }
@@ -234,7 +233,7 @@ func (s *SQLiteMemoryStore) LogToolCall(ctx context.Context, sessionID, toolName
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`, id, sessionID, toolName, inputJSON, outputText, errText, durationMS)
 	if err != nil {
-		return fmt.Errorf("failed to log tool call: %w", err)
+		return fmt.Errf("failed to log tool call: %w", err)
 	}
 	return nil
 }
@@ -248,7 +247,7 @@ func (s *SQLiteMemoryStore) GetToolLogs(ctx context.Context, sessionID, toolName
 		LIMIT ?
 	`, sessionID, toolName, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get tool logs: %w", err)
+		return nil, fmt.Errf("failed to get tool logs: %w", err)
 	}
 	defer rows.Close()
 
@@ -257,7 +256,7 @@ func (s *SQLiteMemoryStore) GetToolLogs(ctx context.Context, sessionID, toolName
 		var l ToolLog
 		var outputText, errText sql.NullString
 		if err := rows.Scan(&l.ID, &l.SessionID, &l.ToolName, &l.InputJSON, &outputText, &errText, &l.DurationMS, &l.CreatedAt); err != nil {
-			return nil, fmt.Errorf("failed to scan tool log: %w", err)
+			return nil, fmt.Errf("failed to scan tool log: %w", err)
 		}
 		if outputText.Valid {
 			l.OutputText = outputText.String
@@ -268,7 +267,7 @@ func (s *SQLiteMemoryStore) GetToolLogs(ctx context.Context, sessionID, toolName
 		logs = append(logs, l)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows error: %w", err)
+		return nil, fmt.Errf("rows error: %w", err)
 	}
 	return logs, nil
 }
