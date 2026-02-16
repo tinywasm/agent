@@ -10,8 +10,9 @@ graph TD
     end
 
     subgraph "Infraestructura"
-        LLM -.->|HTTP| OpenAI["Proveedor Modelo (e.g. GPT-4)"]
-        Memory -.->|Persistencia| DB[("Redis / Vector DB")]
-        Tools -.->|Acción| ExternalAPIs["APIs Externas"]
+        LLM -.->|HTTP| Provider["Proveedor de Modelo (LLM Provider)"]
+        Memory -.->|SQLite| DB[("Local SQLite (modernc.org)")]
+        Tools -.->|JSON-RPC| MCPServers["MCP Servers"]
+        Tools -.->|Direct Call| ExternalAPIs["APIs Externas"]
     end
 ```
