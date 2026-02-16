@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"sync"
@@ -124,13 +123,13 @@ func (r *mcpRegistry) execute(ctx context.Context, name string, argsJSON string)
 
 		if result.IsError {
 			// Try to find error text in content if any
-			var sb bytes.Buffer
+			sb := fmt.Convert("")
 			for _, c := range result.Content {
 				if c.Type == "text" {
-					sb.WriteString(c.Text)
+					sb.WrString(fmt.BuffOut, c.Text)
 				}
 			}
-			errMsg := sb.String()
+			errMsg := sb.GetString(fmt.BuffOut)
 			if errMsg == "" {
 				errMsg = "unknown tool error"
 			}
@@ -138,13 +137,13 @@ func (r *mcpRegistry) execute(ctx context.Context, name string, argsJSON string)
 		}
 
 		// Aggregate content text
-		var sb bytes.Buffer
+		sb := fmt.Convert("")
 		for _, c := range result.Content {
 			if c.Type == "text" {
-				sb.WriteString(c.Text)
+				sb.WrString(fmt.BuffOut, c.Text)
 			}
 		}
-		return sb.String(), nil
+		return sb.GetString(fmt.BuffOut), nil
 	}
 
 	return "", fmt.Errf("tool not found: %s", name)

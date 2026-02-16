@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bytes"
 	"context"
 	"time"
 
@@ -114,21 +113,21 @@ func (a *Agent) prepareContext(ctx context.Context, sessionID string) (*LLMReque
 
 	// Helper to format episodes
 	if len(episodes) > 0 {
-		var sb bytes.Buffer
-		sb.WriteString("Previous conversation summary:\n")
+		sb := fmt.Convert("")
+		sb.WrString(fmt.BuffOut, "Previous conversation summary:\n")
 		// Episodes are returned in descending order (newest first) by GetEpisodes,
 		// but for context we want chronological?
 		// "GetEpisodes ... ORDER BY created_at DESC"
 		// So we should iterate backwards or reverse them.
 		for i := len(episodes) - 1; i >= 0; i-- {
-			sb.WriteString(fmt.Sprintf("- %s\n", episodes[i].Summary))
+			sb.WrString(fmt.BuffOut, fmt.Sprintf("- %s\n", episodes[i].Summary))
 		}
 
 		// Add as a system message or prepend to first message?
 		// We'll add as a system message.
 		finalMessages = append(finalMessages, Message{
 			Role: "system",
-			Content: sb.String(),
+			Content: sb.GetString(fmt.BuffOut),
 			CreatedAt: time.Now().Unix(), // This is ephemeral
 		})
 	}
@@ -151,19 +150,19 @@ func (a *Agent) summarizeMessages(ctx context.Context, msgs []Message) (string, 
 		summarizer = a.cfg.LLMs.Primary
 	}
 
-	var sb bytes.Buffer
-	sb.WriteString("Summarize the following conversation segment concisely:\n\n")
+	sb := fmt.Convert("")
+	sb.WrString(fmt.BuffOut, "Summarize the following conversation segment concisely:\n\n")
 	for _, m := range msgs {
-		sb.WriteString(fmt.Sprintf("%s: %s\n", m.Role, m.Content))
+		sb.WrString(fmt.BuffOut, fmt.Sprintf("%s: %s\n", m.Role, m.Content))
 		for _, tc := range m.ToolCalls {
-			sb.WriteString(fmt.Sprintf("Tool Call %s: %s(%s)\n", tc.ID, tc.Name, tc.Input))
+			sb.WrString(fmt.BuffOut, fmt.Sprintf("Tool Call %s: %s(%s)\n", tc.ID, tc.Name, tc.Input))
 		}
 	}
 
 	req := LLMRequest{
 		SystemPrompt: "You are a helpful assistant that summarizes conversations.",
 		Messages: []Message{
-			{Role: "user", Content: sb.String()},
+			{Role: "user", Content: sb.GetString(fmt.BuffOut)},
 		},
 		MaxTokens: 500, // Reasonable limit for summary
 	}
@@ -178,14 +177,14 @@ func (a *Agent) summarizeMessages(ctx context.Context, msgs []Message) (string, 
 }
 
 func (a *Agent) buildSystemPrompt() string {
-	var sb bytes.Buffer
-	sb.WriteString(fmt.Sprintf("You are %s. %s\n", a.cfg.Identity.Name, a.cfg.Identity.Role))
-	sb.WriteString(a.cfg.Identity.Instructions + "\n")
+	sb := fmt.Convert("")
+	sb.WrString(fmt.BuffOut, fmt.Sprintf("You are %s. %s\n", a.cfg.Identity.Name, a.cfg.Identity.Role))
+	sb.WrString(fmt.BuffOut, a.cfg.Identity.Instructions + "\n")
 	if len(a.cfg.Identity.Goals) > 0 {
-		sb.WriteString("Goals:\n")
+		sb.WrString(fmt.BuffOut, "Goals:\n")
 		for _, g := range a.cfg.Identity.Goals {
-			sb.WriteString(fmt.Sprintf("- %s\n", g))
+			sb.WrString(fmt.BuffOut, fmt.Sprintf("- %s\n", g))
 		}
 	}
-	return sb.String()
+	return sb.GetString(fmt.BuffOut)
 }
