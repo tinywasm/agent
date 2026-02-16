@@ -64,123 +64,31 @@ agent/
 
 ## 2. Canonical Types (`types.go`)
 
-All value types used by the interfaces below are defined in [docs/TYPES.md](TYPES.md).
-This includes: `Message`, `Episode`, `Knowledge`, `ToolLog`, `LLMRequest`, `LLMResponse`,
-`ToolDef`, `ToolCall`, `ContextWindowConfig`, and the `Agent` struct with its `Run()` method.
+See [types.go](../types.go). All value types are defined there.
 
 ---
 
 ## 3. Canonical Interfaces (`interfaces.go`)
 
-```go
-package agent
-
-import "context"
-
-type LLMClient interface {
-    Generate(ctx context.Context, req LLMRequest) (LLMResponse, error)
-}
-
-type MemoryStore interface {
-    EnsureSession(ctx context.Context, sessionID string) error
-    AppendMessage(ctx context.Context, sessionID string, msg Message) error
-    GetMessages(ctx context.Context, sessionID string, limit int) ([]Message, error)
-    DeleteMessages(ctx context.Context, sessionID string, ids []string) error
-    SaveEpisode(ctx context.Context, sessionID, summary string, tokenCount int, fromID, toID string) error
-    GetEpisodes(ctx context.Context, sessionID string, limit int) ([]Episode, error)
-    SaveKnowledge(ctx context.Context, sessionID, content, source string) error
-    SearchKnowledge(ctx context.Context, query, sessionID string, limit int) ([]Knowledge, error)
-    LogToolCall(ctx context.Context, sessionID, toolName, inputJSON, outputText, errText string, durationMS int64) error
-    GetToolLogs(ctx context.Context, sessionID, toolName string, limit int) ([]ToolLog, error)
-}
-
-type MCPServer interface {
-    URL() string
-}
-
-type Tool interface {
-    Name() string
-    Description() string
-    InputSchema() string
-    Execute(ctx context.Context, argsJSON string) (string, error)
-}
-```
+See [interfaces.go](../interfaces.go). All interfaces are defined there.
 
 ---
 
 ## 4. Canonical SQLite Schema (`schema.go`)
 
-```sql
-CREATE TABLE IF NOT EXISTS sessions (
-    id TEXT PRIMARY KEY, created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
-CREATE TABLE IF NOT EXISTS messages (
-    id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-    role TEXT NOT NULL CHECK(role IN ('user','assistant','system','tool')),
-    content TEXT NOT NULL, tool_name TEXT, tool_call_id TEXT,
-    token_count INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
-CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
-
-CREATE TABLE IF NOT EXISTS episodes (
-    id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-    summary TEXT NOT NULL, token_count INTEGER NOT NULL DEFAULT 0,
-    from_msg_id TEXT NOT NULL, to_msg_id TEXT NOT NULL,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
-CREATE TABLE IF NOT EXISTS knowledge (
-    id TEXT PRIMARY KEY, session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,
-    content TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'agent',
-    created_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
-CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
-    content, content='knowledge', content_rowid='rowid'
-);
--- v2 (future): vector search via sqlite-vec extension.
--- CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_vec USING vec0(embedding float[768]);
--- Each rowid matches the corresponding rowid in the knowledge table.
-CREATE TABLE IF NOT EXISTS tool_logs (
-    id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-    tool_name TEXT NOT NULL, input_json TEXT NOT NULL,
-    output_text TEXT, error_text TEXT,
-    duration_ms INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
-CREATE INDEX IF NOT EXISTS idx_tool_logs_session ON tool_logs(session_id, created_at);
-```
+See [schema.go](../schema.go).
 
 ---
 
 ## 5. ReAct + Reflection Algorithm
 
-1.  **Input:** User query + SessionID.
-2.  **Initialize:** Ensure session exists, append user message.
-3.  **Loop (MaxIterations=10, MaxRetries=3):**
-    - Build Context Window: Recent messages + Last 5 episodes.
-    - **Reasoning:** Call `cfg.LLMs.Primary.Generate()` with context + available tools.
-    - **Acting:** If `StopReason == "tool_use"`:
-        - Call MCP tools via JSON-RPC.
-        - On failure: inject error as observation immediately (no retry of same call). Increment `actingFailures`.
-        - If `actingFailures >= MaxRetries`: transition to `StateResponding` with "max tool retries reached".
-        - Log tool execution. Append results/errors to memory. Back to loop.
-    - **Reflection:** If `StopReason == "end_turn"`:
-        - Select reflector: `r = cfg.LLMs.Reflector; if r == nil { r = cfg.LLMs.Primary }`.
-        - Call `r.Generate()` for self-correction: *"Is the answer complete and accurate?"*.
-        - If "INSUFFICIENT": Inject feedback and back to loop.
-        - If "SUFFICIENT": Finalize.
-4.  **Response:** Append assistant message to memory and return answer.
+See [orchestrator.go](../orchestrator.go).
 
 ---
 
 ## 6. Context Window Management
 
-- **Budget Calculation:** `Limit - Buffer - ToolDefs - SystemPrompt - Episodes = Available for Messages`.
-- **Sliding Window:** Only load last `MaxRecentMsgs` (e.g., 20) by default.
-- **Summarization Trigger:** If tokens exceed 80% of budget:
-    - Select summarizer: `s = cfg.LLMs.Summarizer; if s == nil { s = cfg.LLMs.Primary }`.
-    - `s` summarizes the **oldest 50%** of the current window: the first `⌊len(messages)/2⌋` entries in ascending `created_at` order (i.e., the earliest half of the loaded slice).
-    - Compression stored as an `Episode`.
-    - Old messages deleted from `messages` table.
+See [context_window.go](../context_window.go).
 
 ---
 
@@ -319,83 +227,14 @@ curl http://localhost:11434/api/tags
 
 ## 8. FSM Implementation (`fsm.go`)
 
-```go
-type State uint8
-
-const (
-    StateIdle       State = iota
-    StateReasoning
-    StateActing
-    StateReflecting
-    StateResponding
-)
-
-// allowed defines valid transitions: from -> []to
-var allowed = map[State][]State{
-    StateIdle:       {StateReasoning},
-    StateReasoning:  {StateActing, StateReflecting, StateResponding},
-    StateActing:     {StateReasoning, StateResponding},
-    StateReflecting: {StateReasoning, StateResponding},
-    StateResponding: {StateIdle},
-}
-
-type fsm struct{ current State }
-
-func (f *fsm) transition(to State) error {
-    for _, s := range allowed[f.current] {
-        if s == to {
-            f.current = to
-            return nil
-        }
-    }
-    return fmt.Errorf("invalid FSM transition: %v -> %v", f.current, to)
-}
-```
-
-[See FSM State Diagram](diagrams/FSM_STATE.md)
+See [fsm.go](../fsm.go).
 
 ---
 
 ## 9. MCP Client Wire Types (`mcp_client.go`)
 
-The MCP protocol uses **JSON-RPC 2.0 over a single HTTP endpoint**. All methods are encoded in the request body — never in the URL path.
-
-```go
-type jsonRPCRequest struct {
-    JSONRPC string `json:"jsonrpc"` // always "2.0"
-    ID      int64  `json:"id,omitempty"`
-    Method  string `json:"method"`
-    Params  any    `json:"params,omitempty"`
-}
-type jsonRPCResponse struct {
-    JSONRPC string          `json:"jsonrpc"`
-    ID      int64           `json:"id"`
-    Result  json.RawMessage `json:"result,omitempty"`
-    Error   *rpcError       `json:"error,omitempty"`
-}
-type rpcError struct {
-    Code    int    `json:"code"`
-    Message string `json:"message"`
-}
-type listToolsResult struct {
-    Tools []struct {
-        Name        string          `json:"name"`
-        Description string          `json:"description"`
-        InputSchema json.RawMessage `json:"inputSchema"`
-    } `json:"tools"`
-}
-type callToolResult struct {
-    Content []struct {
-        Type string `json:"type"`
-        Text string `json:"text,omitempty"`
-    } `json:"content"`
-    IsError bool `json:"isError,omitempty"`
-}
-```
-
-Handshake sequence: `initialize` → `notifications/initialized` (no ID, no response) → `tools/list`.
-
-[See MCP Client Flow Diagram](diagrams/MCP_CLIENT_FLOW.md)
+See [mcp_client.go](../mcp_client.go).
+See also [mcp_registry.go](../mcp_registry.go) for MCPRegistry implementation.
 
 ---
 
@@ -494,53 +333,7 @@ type openAIResponse struct {
 
 ## 11. Constructor Pattern (`agent.go`)
 
-`agent.go` is the **only** place where concrete types are wired together (Dependency Injection root):
-
-```go
-type Config struct {
-    Identity      IdentityConfig
-    LLMs          LLMConfig    // required: LLMs.Primary != nil
-    Memory        MemoryStore  // required
-
-    // Tool sources — merged at startup into internal tool registry
-    LocalTools    []Tool       // direct in-process tools
-    MCPHandlers   []MCPServer  // programmatic references to running servers
-    MCPServers    []string     // remote MCP server URLs (JSON-RPC 2.0)
-
-    // Runtime tunables
-    ContextWindow ContextWindowConfig
-    MaxIterations int           // max Reasoning→Acting cycles (default: 10)
-    MaxRetries    int           // max consecutive Acting failures before Responding (default: 3)
-    MCPTimeout    time.Duration // default: 30s
-}
-
-func New(cfg Config) (*Agent, error) {
-    if cfg.LLMs.Primary == nil { return nil, errors.New("agent: LLMs.Primary is required") }
-    if cfg.Memory == nil       { return nil, errors.New("agent: Memory is required") }
-    // Apply defaults
-    if cfg.MaxIterations == 0 { cfg.MaxIterations = 10 }
-    if cfg.MaxRetries == 0    { cfg.MaxRetries = 3 }
-    if cfg.MCPTimeout == 0    { cfg.MCPTimeout = 30 * time.Second }
-    // apply defaults, init MCPRegistry, connect MCP servers...
-    // build system prompt from cfg.Identity + discovered tool list
-}
-```
-
-**Example — integration test wiring:**
-```go
-agent.New(agent.Config{
-    Identity: agent.IdentityConfig{
-        Name:         "Recepcionista",
-        Role:         "Recepcionista de Clínica San Miguel",
-        Instructions: "Responde siempre en español, de forma concisa.",
-        Goals:        []string{"Informar horarios", "Gestionar citas"},
-    },
-    LLMs: agent.LLMConfig{
-        Primary: agent.NewOllamaClient("qwen2.5:7b"),
-    },
-    Memory: agent.NewSQLiteMemory(":memory:"),
-})
-```
+See [agent.go](../agent.go).
 
 ---
 
