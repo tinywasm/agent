@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     role TEXT NOT NULL CHECK(role IN ('user','assistant','system','tool')),
     content TEXT NOT NULL, tool_name TEXT, tool_call_id TEXT,
+    tool_calls TEXT, -- JSON array of ToolCall objects
     token_count INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);

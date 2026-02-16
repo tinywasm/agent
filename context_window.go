@@ -134,17 +134,10 @@ func (a *Agent) prepareContext(ctx context.Context, sessionID string) (*LLMReque
 
 	finalMessages = append(finalMessages, messages...)
 
-	// Get Tools from registry (not implemented yet)
-	// For now empty tools
-	var tools []ToolDef
-	if a.registry != nil {
-		// tools = a.registry.getTools()
-	}
-
 	req := &LLMRequest{
 		SystemPrompt: sysPrompt, // Base system prompt
 		Messages:     finalMessages,
-		Tools:        tools,
+		Tools:        nil,                           // Tools are injected by orchestrator
 		MaxTokens:    a.cfg.ContextWindow.MaxTokens, // Or remaining? Usually provider limit.
 	}
 
@@ -161,6 +154,9 @@ func (a *Agent) summarizeMessages(ctx context.Context, msgs []Message) (string, 
 	sb.WriteString("Summarize the following conversation segment concisely:\n\n")
 	for _, m := range msgs {
 		sb.WriteString(fmt.Sprintf("%s: %s\n", m.Role, m.Content))
+		for _, tc := range m.ToolCalls {
+			sb.WriteString(fmt.Sprintf("Tool Call %s: %s(%s)\n", tc.ID, tc.Name, tc.Input))
+		}
 	}
 
 	req := LLMRequest{

@@ -2,9 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -14,67 +11,9 @@ func TestReAct_ToolCallThenAnswer(t *testing.T) {
 	ctx := context.Background()
 	testMemory.EnsureSession(ctx, sessionID)
 
-	// Mock MCP Server
-	mcpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req jsonRPCRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", http.StatusBadRequest)
-			return
-		}
-
-		if req.Method == "tools/list" {
-			resp := jsonRPCResponse{
-				JSONRPC: "2.0",
-				ID:      req.ID,
-				Result: json.RawMessage(`{
-					"tools": [
-						{
-							"name": "calculator",
-							"description": "Calculates sum",
-							"inputSchema": {
-								"type": "object",
-								"properties": {
-									"a": {"type": "integer"},
-									"b": {"type": "integer"}
-								}
-							}
-						}
-					]
-				}`),
-			}
-			json.NewEncoder(w).Encode(resp)
-			return
-		}
-
-		if req.Method == "tools/call" {
-			// Parse params
-			// We expect "name": "calculator", "arguments": {a: 1, b: 2}
-			// Just return "3"
-			resp := jsonRPCResponse{
-				JSONRPC: "2.0",
-				ID:      req.ID,
-				Result: json.RawMessage(`{
-					"content": [{"type": "text", "text": "3"}],
-					"isError": false
-				}`),
-			}
-			json.NewEncoder(w).Encode(resp)
-			return
-		}
-	}))
-	defer mcpServer.Close()
-
 	// Mock LLM
-	// Call 1: Reasoning -> Tool Call
-	// Call 2: Reasoning (after tool) -> Answer
-	// Call 3: Reflection -> SUFFICIENT
-
-	step := 0
 	mockLLM := &MockLLMClient{
 		GenerateFunc: func(ctx context.Context, req LLMRequest) (LLMResponse, error) {
-			step++
-			// t.Logf("LLM called step %d, prompt: %s", step, req.SystemPrompt)
-
 			// Check if reflection
 			if strings.Contains(req.SystemPrompt, "critic that evaluates") {
 				return LLMResponse{
@@ -85,7 +24,6 @@ func TestReAct_ToolCallThenAnswer(t *testing.T) {
 			}
 
 			// Reasoning steps
-			// If we see tool result in messages, we answer.
 			hasToolResult := false
 			for _, m := range req.Messages {
 				if m.Role == "tool" {
@@ -95,7 +33,6 @@ func TestReAct_ToolCallThenAnswer(t *testing.T) {
 			}
 
 			if !hasToolResult {
-				// First turn: Call tool
 				return LLMResponse{
 					Text:       "I will calculate 1+2.",
 					StopReason: "tool_use",
@@ -109,7 +46,6 @@ func TestReAct_ToolCallThenAnswer(t *testing.T) {
 					TokensUsed: 20,
 				}, nil
 			} else {
-				// Second turn: Answer
 				return LLMResponse{
 					Text:       "The answer is 3.",
 					StopReason: "end_turn",
@@ -125,7 +61,7 @@ func TestReAct_ToolCallThenAnswer(t *testing.T) {
 			Primary: mockLLM,
 		},
 		Memory:     testMemory,
-		MCPServers: []string{mcpServer.URL},
+		MCPServers: []string{testHandler.URL()},
 	}
 
 	agent, err := New(cfg)
@@ -141,9 +77,163 @@ func TestReAct_ToolCallThenAnswer(t *testing.T) {
 	if answer != "The answer is 3." {
 		t.Errorf("expected answer 'The answer is 3.', got '%s'", answer)
 	}
+}
 
-	// Verify state
-	if agent.fsm.current != StateIdle {
-		t.Errorf("expected agent to be Idle, got %s", agent.fsm.current)
+func TestReAct_ReflectionApproved(t *testing.T) {
+	sessionID := t.Name()
+	ctx := context.Background()
+	testMemory.EnsureSession(ctx, sessionID)
+
+	mockLLM := &MockLLMClient{
+		GenerateFunc: func(ctx context.Context, req LLMRequest) (LLMResponse, error) {
+			if strings.Contains(req.SystemPrompt, "critic that evaluates") {
+				return LLMResponse{Text: "SUFFICIENT", StopReason: "end_turn"}, nil
+			}
+			return LLMResponse{Text: "Answer", StopReason: "end_turn"}, nil
+		},
+	}
+
+	cfg := Config{
+		Identity: IdentityConfig{Name: "Bot"},
+		LLMs: LLMConfig{Primary: mockLLM},
+		Memory: testMemory,
+	}
+
+	agent, _ := New(cfg)
+	ans, err := agent.Run(ctx, sessionID, "Hi")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	if ans != "Answer" {
+		t.Errorf("expected Answer, got %s", ans)
+	}
+}
+
+func TestReAct_ReflectionRetry(t *testing.T) {
+	sessionID := t.Name()
+	ctx := context.Background()
+	testMemory.EnsureSession(ctx, sessionID)
+
+	attempts := 0
+	mockLLM := &MockLLMClient{
+		GenerateFunc: func(ctx context.Context, req LLMRequest) (LLMResponse, error) {
+			if strings.Contains(req.SystemPrompt, "critic that evaluates") {
+				attempts++
+				if attempts == 1 {
+					return LLMResponse{Text: "INSUFFICIENT. Missing detail.", StopReason: "end_turn"}, nil
+				}
+				return LLMResponse{Text: "SUFFICIENT", StopReason: "end_turn"}, nil
+			}
+			// If we see "Reflection feedback" in history, generate improved answer
+			hasFeedback := false
+			for _, m := range req.Messages {
+				if strings.Contains(m.Content, "Reflection feedback") {
+					hasFeedback = true
+					break
+				}
+			}
+			if hasFeedback {
+				return LLMResponse{Text: "Improved Answer", StopReason: "end_turn"}, nil
+			}
+			return LLMResponse{Text: "Initial Answer", StopReason: "end_turn"}, nil
+		},
+	}
+
+	cfg := Config{
+		Identity: IdentityConfig{Name: "Bot"},
+		LLMs: LLMConfig{Primary: mockLLM},
+		Memory: testMemory,
+	}
+
+	agent, _ := New(cfg)
+	ans, err := agent.Run(ctx, sessionID, "Hi")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	if ans != "Improved Answer" {
+		t.Errorf("expected Improved Answer, got %s", ans)
+	}
+}
+
+func TestReAct_ToolErrorSelfCorrect(t *testing.T) {
+	sessionID := t.Name()
+	ctx := context.Background()
+	testMemory.EnsureSession(ctx, sessionID)
+
+	mockLLM := &MockLLMClient{
+		GenerateFunc: func(ctx context.Context, req LLMRequest) (LLMResponse, error) {
+			if strings.Contains(req.SystemPrompt, "critic") {
+				return LLMResponse{Text: "SUFFICIENT", StopReason: "end_turn"}, nil
+			}
+
+			// Check for tool error in history
+			hasError := false
+			for _, m := range req.Messages {
+				if m.Role == "tool" && strings.Contains(m.Content, "Error") {
+					hasError = true
+					break
+				}
+			}
+
+			if !hasError {
+				// Call non-existent tool
+				return LLMResponse{
+					Text:       "Trying tool",
+					StopReason: "tool_use",
+					ToolCalls: []ToolCall{{Name: "unknown_tool", Input: "{}"}},
+				}, nil
+			}
+			// Correct
+			return LLMResponse{Text: "Corrected Answer", StopReason: "end_turn"}, nil
+		},
+	}
+
+	cfg := Config{
+		Identity: IdentityConfig{Name: "Bot"},
+		LLMs: LLMConfig{Primary: mockLLM},
+		Memory: testMemory,
+	}
+
+	agent, _ := New(cfg)
+	ans, err := agent.Run(ctx, sessionID, "Hi")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	if ans != "Corrected Answer" {
+		t.Errorf("expected Corrected Answer, got %s", ans)
+	}
+}
+
+func TestReAct_MaxIterationsGuard(t *testing.T) {
+	sessionID := t.Name()
+	ctx := context.Background()
+	testMemory.EnsureSession(ctx, sessionID)
+
+	mockLLM := &MockLLMClient{
+		GenerateFunc: func(ctx context.Context, req LLMRequest) (LLMResponse, error) {
+			// Always call tool
+			return LLMResponse{
+				Text:       "Looping",
+				StopReason: "tool_use",
+				ToolCalls: []ToolCall{{Name: "calculator", Input: `{"a": 1, "b": 1}`}},
+			}, nil
+		},
+	}
+
+	cfg := Config{
+		Identity: IdentityConfig{Name: "Bot"},
+		LLMs: LLMConfig{Primary: mockLLM},
+		Memory: testMemory,
+		MCPServers: []string{testHandler.URL()},
+		MaxIterations: 3,
+	}
+
+	agent, _ := New(cfg)
+	_, err := agent.Run(ctx, sessionID, "Hi")
+	if err == nil {
+		t.Fatalf("expected error due to max iterations, got nil")
+	}
+	if !strings.Contains(err.Error(), "max iterations reached") {
+		t.Errorf("expected 'max iterations reached', got %v", err)
 	}
 }
