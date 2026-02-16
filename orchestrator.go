@@ -86,6 +86,7 @@ func (a *Agent) Run(ctx context.Context, sessionID, userQuery string) (string, e
 				SessionID:  sessionID,
 				Role:       "assistant",
 				Content:    resp.Text, // Might be empty or thought process
+				ToolCalls:  resp.ToolCalls,
 				TokenCount: resp.TokensUsed, // Approximation?
 				CreatedAt:  time.Now().Unix(),
 			}

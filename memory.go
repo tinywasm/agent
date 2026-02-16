@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -45,10 +46,19 @@ func (s *SQLiteMemoryStore) AppendMessage(ctx context.Context, sessionID string,
 	// We allow caller to provide ID, but we must ensure it's unique if we use it as PK.
 	// The table has ID as PK.
 
+	var toolCallsJSON string
+	if len(msg.ToolCalls) > 0 {
+		b, err := json.Marshal(msg.ToolCalls)
+		if err != nil {
+			return fmt.Errorf("failed to marshal tool calls: %w", err)
+		}
+		toolCallsJSON = string(b)
+	}
+
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO messages (id, session_id, role, content, tool_name, tool_call_id, token_count, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, msg.ID, sessionID, msg.Role, msg.Content, msg.ToolName, msg.ToolCallID, msg.TokenCount, msg.CreatedAt)
+		INSERT INTO messages (id, session_id, role, content, tool_name, tool_call_id, tool_calls, token_count, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, msg.ID, sessionID, msg.Role, msg.Content, msg.ToolName, msg.ToolCallID, toolCallsJSON, msg.TokenCount, msg.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to append message: %w", err)
 	}
@@ -57,7 +67,7 @@ func (s *SQLiteMemoryStore) AppendMessage(ctx context.Context, sessionID string,
 
 func (s *SQLiteMemoryStore) GetMessages(ctx context.Context, sessionID string, limit int) ([]Message, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, session_id, role, content, tool_name, tool_call_id, token_count, created_at
+		SELECT id, session_id, role, content, tool_name, tool_call_id, tool_calls, token_count, created_at
 		FROM messages
 		WHERE session_id = ?
 		ORDER BY created_at ASC
@@ -71,8 +81,8 @@ func (s *SQLiteMemoryStore) GetMessages(ctx context.Context, sessionID string, l
 	var msgs []Message
 	for rows.Next() {
 		var m Message
-		var toolName, toolCallID sql.NullString
-		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &toolName, &toolCallID, &m.TokenCount, &m.CreatedAt); err != nil {
+		var toolName, toolCallID, toolCallsJSON sql.NullString
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &toolName, &toolCallID, &toolCallsJSON, &m.TokenCount, &m.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan message: %w", err)
 		}
 		if toolName.Valid {
@@ -80,6 +90,11 @@ func (s *SQLiteMemoryStore) GetMessages(ctx context.Context, sessionID string, l
 		}
 		if toolCallID.Valid {
 			m.ToolCallID = toolCallID.String
+		}
+		if toolCallsJSON.Valid && toolCallsJSON.String != "" {
+			if err := json.Unmarshal([]byte(toolCallsJSON.String), &m.ToolCalls); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal tool calls: %w", err)
+			}
 		}
 		msgs = append(msgs, m)
 	}

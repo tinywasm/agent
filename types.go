@@ -27,6 +27,7 @@ type Message struct {
 	Content    string // text content or tool result JSON
 	ToolName   string // non-empty only when Role == "tool"
 	ToolCallID string // correlates to the LLM tool_use ID
+	ToolCalls  []ToolCall // populated when Role == "assistant" and StopReason == "tool_use"
 	TokenCount int
 	CreatedAt  int64 // unixepoch
 }

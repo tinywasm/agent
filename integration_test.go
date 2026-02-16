@@ -89,22 +89,24 @@ func (c *OllamaClient) Generate(ctx context.Context, req LLMRequest) (LLMRespons
 		}
 		if m.Role == "tool" {
 			msg.ToolCallID = m.ToolCallID
-			// OpenAI expects tool response content as string
 		}
-		// Handling assistant tool calls if we stored them in Content or separate field?
-		// In my orchestrator, I saved assistant message with content.
-		// If assistant message had tool calls, we didn't store them in separate fields in Message struct yet (except indirectly).
-		// But here we need to reconstruct them if we want to support multi-turn with tools.
-		// For now, let's assume text content is enough or we rely on text.
-		// BUT OpenAI requires tool_calls field to match tool response.
-
-		// If the previous message was a tool call, this message is tool result.
-		// But we need the assistant message that made the call to have tool_calls populated.
-
-		// Limitation: Our Message struct doesn't persist ToolCalls fully structured for OpenAI reconstruction
-		// unless we serialize it in Content or add fields.
-		// For integration test, maybe we rely on text-based tool use or just text?
-		// The requirement says "Tool calling: ✓ via OpenAI-compatible API".
+		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
+			var tcs []openAIToolCall
+			for _, tc := range m.ToolCalls {
+				tcs = append(tcs, openAIToolCall{
+					ID:   tc.ID,
+					Type: "function",
+					Function: struct {
+						Name      string `json:"name"`
+						Arguments string `json:"arguments"`
+					}{
+						Name:      tc.Name,
+						Arguments: tc.Input,
+					},
+				})
+			}
+			msg.ToolCalls = tcs
+		}
 
 		messages = append(messages, msg)
 	}
