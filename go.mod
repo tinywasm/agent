@@ -3,10 +3,16 @@ module github.com/tinywasm/agent
 go 1.25.2
 
 require (
+	github.com/google/uuid v1.6.0
+	github.com/tinywasm/fmt v0.17.4
+	github.com/tinywasm/mcpserve v0.0.20
+	modernc.org/sqlite v1.45.0
+)
+
+require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mark3labs/mcp-go v0.43.2 // indirect
@@ -14,11 +20,6 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/spf13/cast v1.7.1 // indirect
-	github.com/tinywasm/context v0.0.14 // indirect
-	github.com/tinywasm/fmt v0.17.4 // indirect
-	github.com/tinywasm/json v0.1.4 // indirect
-	github.com/tinywasm/mcpserve v0.0.20 // indirect
-	github.com/tinywasm/time v0.3.4 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
@@ -27,5 +28,4 @@ require (
 	modernc.org/libc v1.67.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.45.0 // indirect
 )

@@ -1,10 +1,11 @@
 package agent
 
 import (
+	"bytes"
 	"context"
-	"fmt"
-	"strings"
 	"time"
+
+	"github.com/tinywasm/fmt"
 )
 
 // prepareContext builds the context window for the next LLM turn.
@@ -13,13 +14,13 @@ func (a *Agent) prepareContext(ctx context.Context, sessionID string) (*LLMReque
 	// 1. Load recent episodes
 	episodes, err := a.mem.GetEpisodes(ctx, sessionID, a.cfg.ContextWindow.MaxEpisodes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load episodes: %w", err)
+		return nil, fmt.Errf("failed to load episodes: %w", err)
 	}
 
 	// 2. Load recent messages
 	messages, err := a.mem.GetMessages(ctx, sessionID, a.cfg.ContextWindow.MaxRecentMsgs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load messages: %w", err)
+		return nil, fmt.Errf("failed to load messages: %w", err)
 	}
 
 	// 3. Calculate current token usage
@@ -64,14 +65,14 @@ func (a *Agent) prepareContext(ctx context.Context, sessionID string) (*LLMReque
 		if err != nil {
 			// Log error but continue without summarization? Or fail?
 			// Let's fail for now to be safe.
-			return nil, fmt.Errorf("summarization failed: %w", err)
+			return nil, fmt.Errf("summarization failed: %w", err)
 		}
 
 		// Save Episode
 		fromID := toSummarize[0].ID
 		toID := toSummarize[len(toSummarize)-1].ID
 		if err := a.mem.SaveEpisode(ctx, sessionID, summary, tokenCount, fromID, toID); err != nil {
-			return nil, fmt.Errorf("failed to save episode: %w", err)
+			return nil, fmt.Errf("failed to save episode: %w", err)
 		}
 
 		// Add new episode to the list for this turn context
@@ -89,7 +90,7 @@ func (a *Agent) prepareContext(ctx context.Context, sessionID string) (*LLMReque
 			ids = append(ids, m.ID)
 		}
 		if err := a.mem.DeleteMessages(ctx, sessionID, ids); err != nil {
-			return nil, fmt.Errorf("failed to delete summarized messages: %w", err)
+			return nil, fmt.Errf("failed to delete summarized messages: %w", err)
 		}
 
 		// Use remaining messages for this turn
@@ -113,7 +114,7 @@ func (a *Agent) prepareContext(ctx context.Context, sessionID string) (*LLMReque
 
 	// Helper to format episodes
 	if len(episodes) > 0 {
-		var sb strings.Builder
+		var sb bytes.Buffer
 		sb.WriteString("Previous conversation summary:\n")
 		// Episodes are returned in descending order (newest first) by GetEpisodes,
 		// but for context we want chronological?
@@ -150,7 +151,7 @@ func (a *Agent) summarizeMessages(ctx context.Context, msgs []Message) (string, 
 		summarizer = a.cfg.LLMs.Primary
 	}
 
-	var sb strings.Builder
+	var sb bytes.Buffer
 	sb.WriteString("Summarize the following conversation segment concisely:\n\n")
 	for _, m := range msgs {
 		sb.WriteString(fmt.Sprintf("%s: %s\n", m.Role, m.Content))
@@ -177,7 +178,7 @@ func (a *Agent) summarizeMessages(ctx context.Context, msgs []Message) (string, 
 }
 
 func (a *Agent) buildSystemPrompt() string {
-	var sb strings.Builder
+	var sb bytes.Buffer
 	sb.WriteString(fmt.Sprintf("You are %s. %s\n", a.cfg.Identity.Name, a.cfg.Identity.Role))
 	sb.WriteString(a.cfg.Identity.Instructions + "\n")
 	if len(a.cfg.Identity.Goals) > 0 {

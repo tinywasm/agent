@@ -1,11 +1,12 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
-	"strings"
 	"sync"
+
+	"github.com/tinywasm/fmt"
 )
 
 type mcpToolEntry struct {
@@ -40,7 +41,7 @@ func (r *mcpRegistry) addMCPServer(ctx context.Context, server MCPServer) error 
 func (r *mcpRegistry) addMCPClient(ctx context.Context, client *HTTPMCPClient) error {
 	resRaw, err := client.Call(ctx, "tools/list", nil)
 	if err != nil {
-		return fmt.Errorf("failed to list tools from %s: %w", client.BaseURL, err)
+		return fmt.Errf("failed to list tools from %s: %w", client.BaseURL, err)
 	}
 
 	// It seems listToolsResult structure:
@@ -51,7 +52,7 @@ func (r *mcpRegistry) addMCPClient(ctx context.Context, client *HTTPMCPClient) e
 
 	var list listToolsResult
 	if err := json.Unmarshal(resRaw, &list); err != nil {
-		return fmt.Errorf("failed to unmarshal tools list: %w", err)
+		return fmt.Errf("failed to unmarshal tools list: %w", err)
 	}
 
 	r.mu.Lock()
@@ -103,7 +104,7 @@ func (r *mcpRegistry) execute(ctx context.Context, name string, argsJSON string)
 		// Call MCP tool
 		var args map[string]any
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-			return "", fmt.Errorf("invalid args JSON: %w", err)
+			return "", fmt.Errf("invalid args JSON: %w", err)
 		}
 
 		params := map[string]any{
@@ -118,12 +119,12 @@ func (r *mcpRegistry) execute(ctx context.Context, name string, argsJSON string)
 
 		var result callToolResult
 		if err := json.Unmarshal(resRaw, &result); err != nil {
-			return "", fmt.Errorf("failed to unmarshal tool result: %w", err)
+			return "", fmt.Errf("failed to unmarshal tool result: %w", err)
 		}
 
 		if result.IsError {
 			// Try to find error text in content if any
-			var sb strings.Builder
+			var sb bytes.Buffer
 			for _, c := range result.Content {
 				if c.Type == "text" {
 					sb.WriteString(c.Text)
@@ -133,11 +134,11 @@ func (r *mcpRegistry) execute(ctx context.Context, name string, argsJSON string)
 			if errMsg == "" {
 				errMsg = "unknown tool error"
 			}
-			return "", fmt.Errorf("tool execution failed: %s", errMsg)
+			return "", fmt.Errf("tool execution failed: %s", errMsg)
 		}
 
 		// Aggregate content text
-		var sb strings.Builder
+		var sb bytes.Buffer
 		for _, c := range result.Content {
 			if c.Type == "text" {
 				sb.WriteString(c.Text)
@@ -146,5 +147,5 @@ func (r *mcpRegistry) execute(ctx context.Context, name string, argsJSON string)
 		return sb.String(), nil
 	}
 
-	return "", fmt.Errorf("tool not found: %s", name)
+	return "", fmt.Errf("tool not found: %s", name)
 }
