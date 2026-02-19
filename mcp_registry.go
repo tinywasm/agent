@@ -8,8 +8,14 @@ import (
 	"github.com/tinywasm/fmt"
 )
 
+// mcpCaller abstracts the JSON-RPC transport for MCP protocol calls.
+// HTTPMCPClient implements this interface; MockMCPClient implements it in tests.
+type mcpCaller interface {
+	Call(ctx context.Context, method string, params any) (json.RawMessage, error)
+}
+
 type mcpToolEntry struct {
-	Client *HTTPMCPClient
+	Client mcpCaller
 	Def    ToolDef
 }
 
@@ -37,10 +43,10 @@ func (r *mcpRegistry) addMCPServer(ctx context.Context, server MCPServer) error 
 	return r.addMCPClient(ctx, client)
 }
 
-func (r *mcpRegistry) addMCPClient(ctx context.Context, client *HTTPMCPClient) error {
+func (r *mcpRegistry) addMCPClient(ctx context.Context, client mcpCaller) error {
 	resRaw, err := client.Call(ctx, "tools/list", nil)
 	if err != nil {
-		return fmt.Errf("failed to list tools from %s: %w", client.BaseURL, err)
+		return fmt.Errf("tools/list failed: %w", err)
 	}
 
 	// It seems listToolsResult structure:

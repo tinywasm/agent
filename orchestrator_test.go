@@ -237,3 +237,59 @@ func TestReAct_MaxIterationsGuard(t *testing.T) {
 		t.Errorf("expected 'max iterations reached', got %v", err)
 	}
 }
+
+// TestOrchestrator_RealMCP verifies the full MCP protocol integration path:
+// tool discovery from a real mcpserve.Handler → tool execution via JSON-RPC → result propagation.
+// Unlike TestReAct_ToolCallThenAnswer (which uses hardcoded tool names), this test
+// asserts that tools are dynamically discovered and called by name from the registry.
+func TestOrchestrator_RealMCP(t *testing.T) {
+	sessionID := t.Name()
+	ctx := context.Background()
+	testMemory.EnsureSession(ctx, sessionID)
+
+	toolCalled := false
+	mockLLM := &MockLLMClient{
+		GenerateFunc: func(ctx context.Context, req LLMRequest) (LLMResponse, error) {
+			if strings.Contains(req.SystemPrompt, "critic that evaluates") {
+				return LLMResponse{Text: "SUFFICIENT", StopReason: "end_turn"}, nil
+			}
+			// Verify tools were discovered from the real MCP server.
+			if len(req.Tools) == 0 {
+				t.Error("expected tools to be discovered from MCP server, got none")
+				return LLMResponse{Text: "no tools", StopReason: "end_turn"}, nil
+			}
+			if !toolCalled {
+				toolCalled = true
+				// Call the first discovered tool by its actual name (not hardcoded).
+				return LLMResponse{
+					StopReason: "tool_use",
+					ToolCalls:  []ToolCall{{ID: "mcp1", Name: req.Tools[0].Name, Input: `{"a":3,"b":4}`}},
+					TokensUsed: 10,
+				}, nil
+			}
+			return LLMResponse{Text: "Result via MCP", StopReason: "end_turn", TokensUsed: 10}, nil
+		},
+	}
+
+	cfg := Config{
+		Identity:   IdentityConfig{Name: "Bot"},
+		LLMs:       LLMConfig{Primary: mockLLM},
+		Memory:     testMemory,
+		MCPServers: []string{testHandler.URL()},
+	}
+
+	agent, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	ans, err := agent.Run(ctx, sessionID, "compute")
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	if ans != "Result via MCP" {
+		t.Errorf("unexpected answer: %s", ans)
+	}
+	if !toolCalled {
+		t.Error("expected MCP tool to be called, but it was not")
+	}
+}

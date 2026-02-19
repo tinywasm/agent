@@ -10,7 +10,11 @@
     - **Composition:** Main structs must hold these interfaces.
     - **Injection:** `agent.go` constructor is the ONLY place where "Real" implementations are injected.
 
-- **Isomorphic Package Policy:** This library runs on both backend and WASM. Always prefer `tinywasm/` packages over stdlib: `github.com/tinywasm/fmt` (replaces `fmt`, `errors`, `strings`, `strconv`), `github.com/tinywasm/json` (replaces `encoding/json`), `github.com/tinywasm/context` (replaces `context`), `github.com/tinywasm/time` (replaces `time`). Use stdlib directly only for packages without a `tinywasm/` equivalent (`net/http`, `sync`). Allowed external packages: `modernc.org/sqlite`. (`github.com/asg017/sqlite-vec` is **v2 scope** — see section 4 and [MEMORY.md, section 7](MEMORY.md)).
+- **Isomorphic Package Policy:** This library runs on both backend and WASM. Always prefer `tinywasm/` packages over stdlib: `github.com/tinywasm/fmt` (replaces `fmt`, `errors`, `strings`, `strconv`), `github.com/tinywasm/context` (replaces `context`), `github.com/tinywasm/time` (replaces `time`). Use stdlib directly only for packages without a `tinywasm/` equivalent (`net/http`, `sync`, `encoding/json`). Allowed external packages: `modernc.org/sqlite`. (`github.com/asg017/sqlite-vec` is **v2 scope** — see section 4 and [MEMORY.md, section 7](MEMORY.md)).
+
+  > **Note on `tinywasm/json`:** Not yet implemented. `encoding/json` is used directly in backend-only files (`memory.go`, `mcp_client.go`, `mcp_registry.go`) until `tinywasm/json` is created.
+  >
+  > **Note on `tinywasm/context` and `tinywasm/time`:** Both packages require a refactor to expose backend-compatible APIs (see [tinywasm/context BACKEND_COMPAT plan](https://github.com/tinywasm/context) and [tinywasm/time DURATION_SUPPORT plan](https://github.com/tinywasm/time)). The agent refactor is pending those library updates.
 
 - **Testing:**
     - **Diagram-Driven Testing (DDT):** Every logic flow in `docs/diagrams/*.md` must have a corresponding test.
@@ -49,8 +53,9 @@ agent/
 > **Provider agnosticism:** The `agent` package ships with **zero LLM provider adapters**. Users implement `LLMClient` for their preferred provider (Anthropic, OpenAI, Ollama, etc.). See [Appendix A](#appendix-a-reference-llm-adapter-implementations) for reference implementations to copy as a starting point.
 
 **Production Dependencies (v1):**
-- `github.com/tinywasm/fmt`, `github.com/tinywasm/json`, `github.com/tinywasm/context`, `github.com/tinywasm/time` (isomorphic)
+- `github.com/tinywasm/fmt`, `github.com/tinywasm/context`, `github.com/tinywasm/time` (isomorphic — pending library updates)
 - `modernc.org/sqlite` (pure Go SQLite driver)
+- `github.com/google/uuid` (ID generation)
 
 > **v2 (future):** `github.com/asg017/sqlite-vec` — vector search extension. Not required in v1; FTS5 (built into SQLite) covers semantic search. See [MEMORY.md, section 7](MEMORY.md).
 
