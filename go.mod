@@ -5,7 +5,7 @@ go 1.25.2
 require (
 	github.com/google/uuid v1.6.0
 	github.com/tinywasm/fmt v0.18.4
-	github.com/tinywasm/mcpserve v0.0.24
+	github.com/tinywasm/mcpserve v0.0.28
 	modernc.org/sqlite v1.45.0
 )
 
