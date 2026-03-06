@@ -15,12 +15,12 @@ var testHandler *mcpserve.Handler
 
 type testToolProvider struct{}
 
-func (p testToolProvider) GetMCPToolsMetadata() []mcpserve.ToolMetadata {
-	return []mcpserve.ToolMetadata{
+func (p testToolProvider) GetMCPTools() []mcpserve.Tool {
+	return []mcpserve.Tool{
 		{
 			Name:        "calculator",
 			Description: "Calculates sum",
-			Parameters: []mcpserve.ParameterMetadata{
+			Parameters: []mcpserve.Parameter{
 				{
 					Name:        "a",
 					Description: "First number",
