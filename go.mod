@@ -16,7 +16,7 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/tinywasm/fetch v0.1.22 // indirect
 	github.com/tinywasm/json v0.1.7 // indirect
-	github.com/tinywasm/mcp v0.0.17 // indirect
+	github.com/tinywasm/mcp v0.0.19 // indirect
 	github.com/tinywasm/sse v0.0.12 // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
 	golang.org/x/sys v0.37.0 // indirect
